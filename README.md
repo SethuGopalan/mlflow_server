@@ -1,28 +1,28 @@
 # MLflow Server Setup on Fedora
 
-This folder is used to manage a Fedora-hosted MLflow Tracking Server for the private AI lab.
+This repository documents how to run a self-hosted MLflow Tracking Server for a private AI / data engineering lab.
 
 The goal is:
 
 ```text
 Coder projects / training scripts
         ↓
-MLflow Tracking Server on Fedora
+MLflow Tracking Server
         ↓
 PostgreSQL = metadata backend
-MinIO = artifact/model storage
+Object storage = artifact/model storage
 ```
 
-This setup keeps MLflow as a shared service instead of running a separate MLflow server inside every project.
+This setup keeps MLflow as a shared tracking service instead of running a separate MLflow server inside every project.
 
 ---
 
 ## 1. Project Folder
 
-Main folder:
+Example local folder:
 
 ```bash
-/home/sethugopalan/coder_workspace/mlflowserver
+/home/<linux-user>/coder_workspace/mlflowserver
 ```
 
 Expected structure:
@@ -36,18 +36,18 @@ mlflowserver/
   scripts/
 ```
 
-If the folder has permission issues, run from Fedora:
+If the folder has permission issues, run from the host machine:
 
 ```bash
-cd /home/sethugopalan/coder_workspace
-sudo chown -R sethugopalan:sethugopalan mlflowserver
+cd /home/<linux-user>/coder_workspace
+sudo chown -R <linux-user>:<linux-user> mlflowserver
 chmod -R 755 mlflowserver
 ```
 
 Then create the basic structure:
 
 ```bash
-cd /home/sethugopalan/coder_workspace/mlflowserver
+cd /home/<linux-user>/coder_workspace/mlflowserver
 mkdir -p logs scripts
 touch README.md .env
 ```
@@ -56,10 +56,10 @@ touch README.md .env
 
 ## 2. Create Python Virtual Environment
 
-Run this on Fedora:
+Run this on the host machine:
 
 ```bash
-cd /home/sethugopalan/coder_workspace/mlflowserver
+cd /home/<linux-user>/coder_workspace/mlflowserver
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -97,17 +97,19 @@ If you already have a PostgreSQL user/password, use that user in the `.env` file
 
 ---
 
-## 4. MinIO Artifact Bucket
+## 4. Object Storage Artifact Bucket
 
 MLflow uses artifact storage for files such as models, plots, datasets, and output files.
 
-In MinIO Console, create this bucket:
+Create an artifact bucket in your S3-compatible object storage platform:
 
 ```text
 mlflow-artifacts
 ```
 
-Keep your MinIO access key and secret key private.
+Examples of S3-compatible object storage include MinIO or cloud object storage services.
+
+Keep access keys and secret keys private.
 
 ---
 
@@ -123,16 +125,16 @@ Use this template and replace placeholders with your real local values:
 
 ```bash
 # PostgreSQL backend store
-MLFLOW_BACKEND_STORE_URI=postgresql://POSTGRES_USER:POSTGRES_PASSWORD@localhost:5432/mlflow_db
+MLFLOW_BACKEND_STORE_URI=postgresql://<postgres-user>:<postgres-password>@localhost:5432/mlflow_db
 
-# MinIO artifact store
+# Artifact store
 MLFLOW_ARTIFACTS_DESTINATION=s3://mlflow-artifacts
 MLFLOW_DEFAULT_ARTIFACT_ROOT=s3://mlflow-artifacts
 
-# MinIO S3-compatible credentials
-AWS_ACCESS_KEY_ID=YOUR_MINIO_ACCESS_KEY
-AWS_SECRET_ACCESS_KEY=YOUR_MINIO_SECRET_KEY
-MLFLOW_S3_ENDPOINT_URL=https://minio.terrafoxai.com
+# S3-compatible credentials
+AWS_ACCESS_KEY_ID=<access-key>
+AWS_SECRET_ACCESS_KEY=<secret-key>
+MLFLOW_S3_ENDPOINT_URL=https://<object-storage-endpoint>
 ```
 
 Important:
@@ -158,7 +160,7 @@ __pycache__/
 Run:
 
 ```bash
-cd /home/sethugopalan/coder_workspace/mlflowserver
+cd /home/<linux-user>/coder_workspace/mlflowserver
 source .venv/bin/activate
 
 set -a
@@ -186,33 +188,50 @@ mlflow server \
 
 ## 7. Open MLflow UI
 
-From the Fedora browser or another machine on the same network:
+From the same host machine:
 
 ```text
-http://192.168.1.181:5000
+http://localhost:5000
 ```
 
-Later, after Cloudflare Tunnel is configured:
+From another machine on the same private network:
 
 ```text
-https://mlflow.terrafoxai.com
+http://<mlflow-server-private-ip>:5000
 ```
+
+If a secure public or private domain is configured through a reverse proxy or tunnel:
+
+```text
+https://<mlflow-domain>
+```
+
+Do not publish private IP addresses, real domains, access tokens, tunnel IDs, or credentials in a public repository.
 
 ---
 
 ## 8. Connect From a Python Project
 
-In another project such as the diabetes dashboard or model training project:
+In another project such as a dashboard or model training project:
 
 ```python
 import mlflow
 
-mlflow.set_tracking_uri("http://192.168.1.181:5000")
-mlflow.set_experiment("diabetes-dashboard")
+mlflow.set_tracking_uri("http://<mlflow-server-private-ip>:5000")
+mlflow.set_experiment("example-project")
 
 with mlflow.start_run():
     mlflow.log_param("model_type", "test")
     mlflow.log_metric("accuracy", 0.90)
+```
+
+If using a domain:
+
+```python
+import mlflow
+
+mlflow.set_tracking_uri("https://<mlflow-domain>")
+mlflow.set_experiment("example-project")
 ```
 
 After running the script, check the MLflow UI.
@@ -223,7 +242,7 @@ After running the script, check the MLflow UI.
 
 First confirm the manual command works.
 
-After that, create a systemd service so MLflow starts automatically when Fedora restarts.
+After that, create a systemd service so MLflow starts automatically when the host machine restarts.
 
 Example future service name:
 
@@ -235,13 +254,13 @@ mlflow-server.service
 
 ## 10. Troubleshooting
 
-### Permission denied inside mlflowserver folder
+### Permission denied inside the project folder
 
 Run:
 
 ```bash
-cd /home/sethugopalan/coder_workspace
-sudo chown -R sethugopalan:sethugopalan mlflowserver
+cd /home/<linux-user>/coder_workspace
+sudo chown -R <linux-user>:<linux-user> mlflowserver
 chmod -R 755 mlflowserver
 ```
 
@@ -259,7 +278,7 @@ Check database exists:
 sudo -u postgres psql -l
 ```
 
-### MinIO artifact error
+### Object storage artifact error
 
 Check:
 
@@ -286,4 +305,4 @@ Stop the old process or use a different port.
 
 This is a private AI lab setup.
 
-Fedora hosts the shared MLflow Tracking Server. PostgreSQL stores MLflow metadata. MinIO stores models and artifacts. Coder projects, training scripts, and future Jetson workloads can all connect to the same MLflow tracking endpoint.
+The host machine runs the shared MLflow Tracking Server. PostgreSQL stores MLflow metadata. S3-compatible object storage stores models and artifacts. Development workspaces, training scripts, and future compute nodes can all connect to the same MLflow tracking endpoint.
